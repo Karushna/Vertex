@@ -10,15 +10,15 @@ router.post('/signup', async (req, res) => {
   }
   try {
     const password_hash = await bcrypt.hash(password, 10);
-    const { rows } = await pool.query(
-      'INSERT INTO users (name, email, password_hash) VALUES ($1, $2, $3) RETURNING id, name, email',
+    const [result] = await pool.execute(
+      'INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)',
       [name, email, password_hash]
     );
-    const user = rows[0];
+    const user = { id: result.insertId, name, email };
     const token = jwt.sign({ id: user.id, name: user.name, email: user.email }, process.env.JWT_SECRET, { expiresIn: '7d' });
     res.status(201).json({ token, user });
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Email already in use' });
+    if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'Email already in use' });
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -29,7 +29,7 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ error: 'email and password are required' });
   }
   try {
-    const { rows } = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+    const [rows] = await pool.execute('SELECT * FROM users WHERE email = ?', [email]);
     const user = rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
       return res.status(401).json({ error: 'Invalid credentials' });
